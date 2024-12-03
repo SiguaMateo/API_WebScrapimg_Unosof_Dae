@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+selenium
+pyodbc
+bs4
+webdriver_manager
+pandas
