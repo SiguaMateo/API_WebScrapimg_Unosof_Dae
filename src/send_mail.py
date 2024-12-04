@@ -20,7 +20,7 @@ def send_mail(message):
         msg['From'] = data_base.get_user_mail()
         msg['To'] = para
 
-        server.sendmail(data_base.get_user_mail(), para, msg.as_string())
+        # server.sendmail(data_base.get_user_mail(), para, msg.as_string())
 
         # data_base.log_to_db(1, "INFO", "correo enviado", endpoint='exitoso', status_code=200)
         server.quit()

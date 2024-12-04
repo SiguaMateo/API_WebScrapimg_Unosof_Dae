@@ -9,94 +9,67 @@ try:
     from selenium.webdriver.support.select import Select
     from bs4 import BeautifulSoup
     from datetime import datetime, timedelta, date
-    from src import data_base
-    from src import send_mail
-    import time
-    import pandas as pd 
+    from src import data_base, send_mail
+    import pandas as pd
     import os
 except Exception as e:
-    print(f"Error al importar las librerias en main, {e}")
+    print(f"Error al importar las librerías: {e}")
+    raise
 
-def login():
-    max_retries = 2
-    retries = 0
-    global driver
-    while retries < max_retries:
-        try:
-            # Inicializar el navegador
-            chrome_options = Options()
-            chrome_options.binary_location = "/usr/bin/google-chrome"
-            # chrome_options.add_argument("--headless") # visualizar el navegador
-            driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-            driver.get(data_base.get_url())
+def create_driver():
+    """Inicializa y devuelve una instancia de ChromeDriver."""
+    chrome_options = Options()
+    chrome_options.binary_location = "/usr/bin/google-chrome"
+    # chrome_options.add_argument("--headless")  # Descomentar para ejecución en modo sin cabeza
+    return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
 
-            # Iniciar sesión
-            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "username"))).send_keys(data_base.get_user())
-            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "password"))).send_keys(data_base.get_password())
+def login(driver):
+    """Realiza el inicio de sesión en la plataforma."""
+    try:
+        driver.get(data_base.get_url())
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "username"))).send_keys(data_base.get_user())
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "password"))).send_keys(data_base.get_password())
+        WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.NAME, "Login"))).click()
+        print("Inicio de sesión exitoso.")
+    except Exception as e:
+        error_msg = f"Error al iniciar sesión: {e}"
+        data_base.log_to_db(1, "ERROR", error_msg, endpoint='login', status_code=500)
+        send_mail.send_mail(error_msg)
+        raise
 
-            message = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.NAME, "Login"))).click()
-            print(message)
-
-            time.sleep(5)  # Esperar un poco
-            break  # Si el login fue exitoso, salimos del bucle
-
-        except Exception as e:
-            retries += 1
-            print(f"Ocurrio un error al iniciar sesion, {e}")
-            time.sleep(3)
-            if retries == max_retries:
-                data_base.log_to_db(1, "ERROR", f"Ocurrio un error al iniciar sesión, {e}", endpoint='fallido', status_code=500)
-                send_mail.send_mail(f"Ocurrio un error al inciar sesión, {e}")
-                raise
-            else:
-                # Solo continuar si no alcanzamos el máximo de reintentos
-                time.sleep(5)
-    
-def scroll_down():
+def scroll_down(driver):
+    """Desplaza la página hacia abajo."""
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-    time.sleep(2)
+    WebDriverWait(driver, 2).until(lambda d: d.execute_script("return document.readyState") == "complete")
 
-# Obtencion de la fecha actual
-hoy = date.today()
-fechahoy=datetime.now()
-fechaFInal=hoy - timedelta(3)
-fechaActual = hoy.strftime("%m/%d/%Y")
-fechaResta=fechaFInal.strftime("%m/%d/%Y")
-fechasql=fechaFInal.strftime("%Y-%m-%d")
-
-def scraple_data():
-    max_retries = 5
+def scrape_data():
+    """Realiza el web scraping de los reportes."""
+    max_retries = 3
     retries = 0
-    login()
-
-    start_date = datetime(2019, 1, 1)  # Fecha de inicio
-    end_date = datetime.today()  # Fecha de hoy
-
-    # Aseguramos que las fechas estén bien definidas
-    if start_date > end_date:
-        print("La fecha de inicio no puede ser mayor que la fecha de hoy.")
-        return
 
     while retries < max_retries:
+        driver = create_driver()  # Crear instancia del navegador
         try:
+            login(driver)
+
+            # Configurar rango de fechas
+            start_date = datetime(2022, 10, 26)  # Fecha de inicio
+            end_date = datetime.today()  # Fecha de hoy
+
             driver.get("https://malimamaster.unosof.com/index.cfm?event=FUES.Reports")
 
-            # Iniciar sesión
             WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "username"))).send_keys(data_base.get_user())
             WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "password"))).send_keys(data_base.get_password())
             WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.NAME, "Login"))).click()
 
             driver.get("https://malimamaster.unosof.com/index.cfm?event=FUES.Reports")
 
-            # Iterar cada 15 días desde la fecha de inicio hasta la fecha de hoy
             while start_date <= end_date:
                 print(f"Extrayendo datos del rango de fechas: {start_date} a {start_date + timedelta(days=14)}")
                 
                 # Convertir las fechas de inicio y fin a strings
                 start_date_str = start_date.strftime('%Y-%m-%d')
                 end_date_str = (start_date + timedelta(days=14)).strftime('%Y-%m-%d')
-
-                driver.get("https://malimamaster.unosof.com/index.cfm?event=FUES.Reports")
 
                 # Rellenar el formulario con las fechas
                 fechaInicio = driver.find_element(By.NAME, 'dt_search_start_1')
@@ -105,21 +78,17 @@ def scraple_data():
                 fechaFin = driver.find_element(By.NAME, 'dt_search_end_1')
                 fechaFin.clear()
                 fechaFin.send_keys(end_date_str)
-                time.sleep(1)
 
-                # Seleccionar los filtros
-                select = Select(driver.find_element(By.ID, 'dt_filter_1'))
-                select.select_by_index(2)
+                # Configurar filtros
+                Select(driver.find_element(By.ID, 'dt_filter_1')).select_by_index(2)
+                Select(driver.find_element(By.ID, 'reportID1')).select_by_index(26)
+                driver.find_element(By.NAME, 'GenerateReport_1').click()
 
-                select = Select(driver.find_element(By.ID, 'reportID1'))
-                select.select_by_index(26)
+                # Esperar carga del reporte
+                WebDriverWait(driver, 50).until(EC.presence_of_element_located((By.ID, "tblAWBDetail")))
 
-                btnGenerarReporte = driver.find_element(By.NAME, 'GenerateReport_1')
-                btnGenerarReporte.click()
-                time.sleep(50)
-
-                scroll_down()
-
+                # Extraer datos
+                scroll_down(driver)
                 contenidoPagina = driver.page_source
                 soup = BeautifulSoup(contenidoPagina, "html.parser")
 
@@ -177,14 +146,11 @@ def scraple_data():
             break
 
         except Exception as e:
-            message = f"Error al realizar el web scraping: {e}"
             retries += 1
-            time.sleep(5)
-            data_base.log_to_db(1, message, endpoint='fallido', status_code=404)
-
+            error_msg = f"Error al realizar el scraping: {e}"
+            print(error_msg)
+            data_base.log_to_db(1, "ERROR", error_msg, endpoint='scraping', status_code=500)
+            if retries == max_retries:
+                send_mail.send_mail(f"Scraping fallido tras {max_retries} intentos: {e}")
         finally:
-            driver.quit()
-            driver.close()
-
-            if retries >= max_retries:
-                print("Máximo de reintentos alcanzado. Finalizando proceso.")
+            driver.quit()  # Cerrar navegador siempre

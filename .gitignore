@@ -114,7 +114,6 @@ mienv
 .env
 env
 
-unosof_data_his.csv
 unosof_data.csv
 
 ._pycache_

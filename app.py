@@ -18,7 +18,7 @@ def default_endpoint():
 @app.get("/get-data-unosof", description="Endpoint para extraer la data de las pagina unosof")
 def get_data():
     try:
-        main.scraple_data()
+        main.scrape_data()
     except Exception as e:
         print(f"Error al realizar el webscraping, {e}")
 
